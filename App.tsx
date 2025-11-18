@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { PRODUCTS, INITIAL_REVIEWS } from './constants';
 import { TRANSLATIONS, Language, Product, Review } from './types';
 import { Header } from './components/Header';
@@ -13,7 +13,13 @@ const App: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [reviews, setReviews] = useState<Review[]>(INITIAL_REVIEWS);
+  
+  // State for CSS Transforms (Blobs)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  
+  // Ref for Canvas Animation (Particles) - prevents re-renders
+  const mousePosRef = useRef({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const t = TRANSLATIONS[lang];
 
@@ -38,15 +44,93 @@ const App: React.FC = () => {
   // Track Mouse for Parallax Effect
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      // Normalize coordinates slightly to center (optional, but keeps movement relative)
-      setMousePos({ 
-        x: (e.clientX - window.innerWidth / 2) * 0.05, 
-        y: (e.clientY - window.innerHeight / 2) * 0.05 
-      });
+      // Normalize coordinates for CSS blobs
+      const x = (e.clientX - window.innerWidth / 2) * 0.05;
+      const y = (e.clientY - window.innerHeight / 2) * 0.05;
+      
+      setMousePos({ x, y });
+      
+      // Update Ref for Canvas loop
+      mousePosRef.current = { x, y };
     };
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
+
+  // Particle System Animation
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    let particles: Array<{x: number, y: number, size: number, speedX: number, speedY: number, opacity: number}> = [];
+
+    const initParticles = () => {
+      particles = [];
+      // Responsive particle count
+      const count = Math.floor(window.innerWidth < 768 ? 30 : 60); 
+      
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          size: Math.random() * 1.5 + 0.5,
+          speedX: (Math.random() - 0.5) * 0.5,
+          speedY: (Math.random() - 0.5) * 0.5,
+          opacity: Math.random() * 0.5 + 0.1
+        });
+      }
+    };
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      initParticles();
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Theme-aware particle color
+      const r = theme === 'dark' ? 255 : 0;
+      const g = theme === 'dark' ? 255 : 0;
+      const b = theme === 'dark' ? 255 : 0;
+      
+      const mx = mousePosRef.current.x;
+      const my = mousePosRef.current.y;
+
+      particles.forEach(p => {
+        // Natural drift + Inverse mouse movement (Parallax)
+        p.x += p.speedX - (mx * 0.05); 
+        p.y += p.speedY - (my * 0.05);
+
+        // Wrap around screen
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+
+        // Draw particle
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.opacity})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      animationFrameId = requestAnimationFrame(draw);
+    };
+
+    window.addEventListener('resize', resize);
+    resize();
+    draw();
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [theme]); // Re-init if theme changes (to update color)
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -90,8 +174,14 @@ const App: React.FC = () => {
             transform: `translate(${mousePos.x * 0.5}px, ${mousePos.y * 0.5}px)` 
           }} 
         />
+
+        {/* Particles Canvas Layer */}
+        <canvas 
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full opacity-60"
+        />
         
-        {/* Grid Pattern Overlay */}
+        {/* Grid/Noise Pattern Overlay */}
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay" />
       </div>
 
